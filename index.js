@@ -2,7 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const app = express();
 require("dotenv").config();
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const port = process.env.PORT || 3000;
 
 // middle ware
@@ -26,7 +26,43 @@ async function run() {
     // Connect the client to the server	(optional starting in v4.7)
     await client.connect();
 
+    // database and collections
+    const myDB = client.db("garments");
+    const allProductsCollection = myDB.collection("all-products");
+
+    //
+
     // here will be my API
+
+    // -----------------------
+    // PRODUCTS RELATED APIS
+    // -----------------------
+    // get all products
+    app.get("/all-products", async (req, res) => {
+      const limit = Number(req.query.limit); // convert safely
+
+      // If limit is NOT a valid number, don't apply limit
+      const cursor = allProductsCollection.find();
+
+      if (!isNaN(limit) && limit > 0) {
+        cursor.limit(limit);
+      }
+
+      const result = await cursor.toArray();
+      res.send(result);
+    });
+
+    // get product by id
+    app.get("/all-products/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+
+      // If limit is NOT a valid number, don't apply limit
+      const cursor = allProductsCollection.find(query);
+
+      const result = await cursor.toArray();
+      res.send(result);
+    });
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
