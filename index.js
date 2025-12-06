@@ -38,12 +38,13 @@ async function run() {
     // USERS RELATED APIS
     // -----------------------
 
+    // GET all users
     app.get("/users", async (req, res) => {
       const result = await usersCollection.find().toArray();
       res.send(result);
     });
 
-    // user post
+    // POST new user
     app.post("/users", async (req, res) => {
       const user = req.body;
       const query = { email: user.email };
@@ -56,6 +57,55 @@ async function run() {
       const result = await usersCollection.insertOne(user);
       res.send(result);
     });
+
+    //GET a single user
+    app.get("/users/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = await usersCollection.findOne(query);
+      res.send(result);
+    });
+
+    // UPDATE user role
+    app.patch("/users/update-role/:id", async (req, res) => {
+      const id = req.params.id;
+      const { role } = req.body;
+
+      if (!role) {
+        return res.status(400).send({ message: "Role is Required" });
+      }
+
+      const filter = { _id: new ObjectId(id) };
+      const updatedDoc = { $set: { role } };
+
+      const result = await usersCollection.updateOne(filter, updatedDoc);
+      res.send(result);
+    });
+
+    // UPDATE USER STATUS (approve / suspend / pending)
+    app.patch("/users/update-status/:id", async (req, res) => {
+      const id = req.params.id;
+      const { status } = req.body;
+
+      if (!status) {
+        return res.status(400).send({ message: "Status is required" });
+      }
+
+      const filter = { _id: new ObjectId(id) };
+      const updateDoc = { $set: { status } };
+
+      const result = await usersCollection.updateOne(filter, updateDoc);
+      res.send(result);
+    });
+
+    // DELETE USER
+    app.delete("/users/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await usersCollection.deleteOne(query);
+      res.send(result);
+    });
+
+    //
 
     // -----------------------
     // PRODUCTS RELATED APIS
