@@ -112,14 +112,15 @@ async function run() {
     // -----------------------
     // get all products
     app.get("/all-products", async (req, res) => {
-      const limit = Number(req.query.limit); // convert safely
+      const limit = Number(req.query.limit);
+      const homeOnly = req.query.homeOnly === "true";
 
-      // If limit is NOT a valid number, don't apply limit
-      const cursor = allProductsCollection.find();
+      const filter = {};
+      if (homeOnly) filter.showOnHome = true;
 
-      if (!isNaN(limit) && limit > 0) {
-        cursor.limit(limit);
-      }
+      let cursor = allProductsCollection.find(filter);
+
+      if (limit) cursor = cursor.limit(limit);
 
       const result = await cursor.toArray();
       res.send(result);
@@ -134,6 +135,48 @@ async function run() {
       const cursor = allProductsCollection.find(query);
 
       const result = await cursor.toArray();
+      res.send(result);
+    });
+
+    // update product
+    app.patch("/products/update/:id", async (req, res) => {
+      const id = req.params.id;
+      const updatedData = req.body;
+
+      const updateDoc = {
+        $set: {
+          ...updatedData,
+          updatedAt: new Date(),
+        },
+      };
+
+      const result = await allProductsCollection.updateOne(
+        { _id: new ObjectId(id) },
+        updateDoc
+      );
+
+      res.send(result);
+    });
+
+    // UPDATE product for show on home
+    app.patch("/products/show-home/:id", async (req, res) => {
+      const id = req.params.id;
+      const { value } = req.body; // true/false
+
+      const result = await allProductsCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { showOnHome: value } }
+      );
+
+      res.send(result);
+    });
+
+    // DELETE product
+    app.delete("/products/:id", async (req, res) => {
+      const id = req.params.id;
+      const result = await allProductsCollection.deleteOne({
+        _id: new ObjectId(id),
+      });
       res.send(result);
     });
 
