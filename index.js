@@ -28,11 +28,34 @@ async function run() {
 
     // database and collections
     const myDB = client.db("garments");
+    const usersCollection = myDB.collection("users");
     const allProductsCollection = myDB.collection("all-products");
 
     //
 
     // here will be my API
+    // -----------------------
+    // USERS RELATED APIS
+    // -----------------------
+
+    app.get("/users", async (req, res) => {
+      const result = await usersCollection.find().toArray();
+      res.send(result);
+    });
+
+    // user post
+    app.post("/users", async (req, res) => {
+      const user = req.body;
+      const query = { email: user.email };
+      const existingUser = await usersCollection.findOne(query);
+
+      if (existingUser) {
+        return res.send({ message: "User already exists", insertedId: null });
+      }
+
+      const result = await usersCollection.insertOne(user);
+      res.send(result);
+    });
 
     // -----------------------
     // PRODUCTS RELATED APIS
