@@ -6,6 +6,14 @@ const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const stripe = require("stripe")(process.env.STRIPE_SECRET);
 const port = process.env.PORT || 3000;
 
+// generate tracking id
+function generateTrackingId() {
+  const prefix = "ORD";
+  const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, ""); // 20251207
+  const randomPart = Math.random().toString(36).substring(2, 6).toUpperCase(); // 4 chars
+  return `${prefix}-${datePart}-${randomPart}`;
+}
+
 // middle ware
 app.use(cors());
 app.use(express.json());
@@ -32,6 +40,7 @@ async function run() {
     const usersCollection = myDB.collection("users");
     const allProductsCollection = myDB.collection("all-products");
     const ordersCollection = myDB.collection("orders");
+    const paymentsCollection = myDB.collection("payments");
 
     //
 
@@ -272,7 +281,7 @@ async function run() {
           },
         ],
         mode: "payment",
-        metadata: { orderId },
+        metadata: { orderId, productTitle: order.productTitle },
         success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${process.env.SITE_DOMAIN}/dashboard/my-orders`,
       });
@@ -284,18 +293,53 @@ async function run() {
     app.patch("/payment-success", async (req, res) => {
       const sessionId = req.query.session_id;
       const session = await stripe.checkout.sessions.retrieve(sessionId);
+      console.log(session);
+      const trackingId = generateTrackingId();
+
+      // prevent the duplicate entry
+      const transactionId = session.payment_intent;
+      const query = { transactionId: transactionId };
+      const isExist = await paymentsCollection.findOne(query);
+      if (isExist) {
+        return;
+      }
+
       if (session.payment_status === "paid") {
         const id = session.metadata.orderId;
         const query = { _id: new ObjectId(id) };
         const updatedDoc = {
           $set: {
             status: "paid",
+            trackingId: trackingId,
           },
         };
 
         const result = await ordersCollection.updateOne(query, updatedDoc);
+
+        // order history
+        const orderInfo = {
+          amount: session.amount_total / 100,
+          currency: session.currency,
+          buyerEmail: session.customer_details.email,
+          buyerName: session.customer_details.name,
+          orderId: session.metadata.orderId,
+          productTitle: session.metadata.productTitle,
+          transactionId: session.payment_intent,
+          trackingId: trackingId,
+          paymentStatus: session.payment_status,
+          paidAt: new Date(),
+        };
+
+        const resultPayment = await paymentsCollection.insertOne(orderInfo);
+        res.send({
+          success: true,
+          result,
+          trackingId: trackingId,
+          transactionId: session.payment_intent,
+          paymentInfo: resultPayment,
+        });
         // console.log("session retrieve", session);
-        res.send({ success: true, result });
+        // res.send({ success: true, result });
       }
       res.send({ success: false });
     });
