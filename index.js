@@ -3,6 +3,7 @@ const cors = require("cors");
 const app = express();
 require("dotenv").config();
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const stripe = require("stripe")(process.env.STRIPE_SECRET);
 const port = process.env.PORT || 3000;
 
 // middle ware
@@ -30,6 +31,7 @@ async function run() {
     const myDB = client.db("garments");
     const usersCollection = myDB.collection("users");
     const allProductsCollection = myDB.collection("all-products");
+    const ordersCollection = myDB.collection("orders");
 
     //
 
@@ -40,7 +42,12 @@ async function run() {
 
     // GET all users
     app.get("/users", async (req, res) => {
-      const result = await usersCollection.find().toArray();
+      const email = req.query.email;
+      let query = {};
+      if (email) {
+        query.email = email;
+      }
+      const result = await usersCollection.find(query).toArray();
       res.send(result);
     });
 
@@ -132,10 +139,30 @@ async function run() {
       const query = { _id: new ObjectId(id) };
 
       // If limit is NOT a valid number, don't apply limit
-      const cursor = allProductsCollection.find(query);
+      const result = await allProductsCollection.findOne(query);
 
-      const result = await cursor.toArray();
+      // const result = await cursor.toArray();
       res.send(result);
+    });
+
+    // single products by id
+    app.get("/single-products/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+
+        const query = { _id: new ObjectId(id) };
+
+        const product = await allProductsCollection.findOne(query);
+
+        if (!product) {
+          return res.status(404).send({ message: "Product not found" });
+        }
+
+        res.send(product);
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: "Error fetching product" });
+      }
     });
 
     // update product
@@ -178,6 +205,99 @@ async function run() {
         _id: new ObjectId(id),
       });
       res.send(result);
+    });
+
+    // -----------------------
+    // ORDER RELATED APIS
+    // -----------------------
+
+    // get orders
+    app.get("/orders", async (req, res) => {
+      const email = req.query.email;
+      const result = await ordersCollection
+        .find({ buyerEmail: email })
+        .sort({ orderTime: -1 })
+        .toArray();
+      res.send(result);
+    });
+
+    // post order
+    app.post("/orders", async (req, res) => {
+      const data = req.body;
+      console.log(data.paymentMethod);
+      const orderStatus =
+        data?.paymentMethod === "PayFast" ? "pending" : "confirmed";
+      const orderData = {
+        ...data,
+        status: orderStatus,
+        orderTime: new Date(),
+      };
+      console.log(orderData);
+
+      const result = await ordersCollection.insertOne(orderData);
+      res.send({
+        success: true,
+        orderId: result.insertedId,
+        paymentRequired: data?.paymentMethod === "PayFast",
+      });
+    });
+
+    // delete orders
+    app.delete("/orders/:id", async (req, res) => {
+      const id = req.params.id;
+      const result = await ordersCollection.deleteOne({
+        _id: new ObjectId(id),
+      });
+      res.send(result);
+    });
+
+    // crete payment session
+    app.post("/create-payment-session", async (req, res) => {
+      const { orderId } = req.body;
+      const order = await ordersCollection.findOne({
+        _id: new ObjectId(orderId),
+      });
+
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ["card"],
+        customer_email: order.buyerEmail,
+        line_items: [
+          {
+            price_data: {
+              currency: "usd",
+              product_data: { name: order.productTitle },
+              unit_amount: order.totalPrice * 100,
+            },
+            quantity: order.quantity,
+          },
+        ],
+        mode: "payment",
+        metadata: { orderId },
+        success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${process.env.SITE_DOMAIN}/dashboard/my-orders`,
+      });
+
+      res.send({ url: session.url });
+    });
+
+    // payment success
+    app.patch("/payment-success", async (req, res) => {
+      const sessionId = req.query.session_id;
+      const session = await stripe.checkout.sessions.retrieve(sessionId);
+      if (session.payment_status === "paid") {
+        const id = session.metadata.orderId;
+        const query = { _id: new ObjectId(id) };
+        const updatedDoc = {
+          $set: {
+            status: "paid",
+          },
+        };
+
+        const result = await ordersCollection.updateOne(query, updatedDoc);
+        // console.log("session retrieve", session);
+        res.send({ success: true, result });
+      }
+      res.send({ success: false });
     });
 
     // Send a ping to confirm a successful connection
