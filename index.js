@@ -174,6 +174,14 @@ async function run() {
       }
     });
 
+    // get products by email
+    app.get("/products", async (req, res) => {
+      const email = req.query.email;
+      const query = { "managerInfo.managerEmail": email };
+      const result = await allProductsCollection.find(query).toArray();
+      res.send(result);
+    });
+
     // post products
     app.post("/products", async (req, res) => {
       const productData = req.body;
@@ -212,6 +220,21 @@ async function run() {
         { $set: { showOnHome: value } }
       );
 
+      res.send(result);
+    });
+
+    // update products
+    app.patch("/products/:id", async (req, res) => {
+      const id = req.params.id;
+      const data = req.body;
+      const filter = { _id: new ObjectId(id) };
+      const updatedData = {
+        $set: {
+          ...data,
+        },
+      };
+
+      const result = await allProductsCollection.updateOne(filter, updatedData);
       res.send(result);
     });
 
