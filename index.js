@@ -174,6 +174,14 @@ async function run() {
       }
     });
 
+    // post products
+    app.post("/products", async (req, res) => {
+      const productData = req.body;
+      productData.status = "active";
+      const result = await allProductsCollection.insertOne(productData);
+      res.send(result);
+    });
+
     // update product
     app.patch("/products/update/:id", async (req, res) => {
       const id = req.params.id;
@@ -223,8 +231,12 @@ async function run() {
     // get orders
     app.get("/orders", async (req, res) => {
       const email = req.query.email;
+      let query = {};
+      if (email) {
+        query.buyerEmail = email;
+      }
       const result = await ordersCollection
-        .find({ buyerEmail: email })
+        .find(query)
         .sort({ orderTime: -1 })
         .toArray();
       res.send(result);
@@ -234,11 +246,12 @@ async function run() {
     app.post("/orders", async (req, res) => {
       const data = req.body;
       console.log(data.paymentMethod);
-      const orderStatus =
+      const paymentStatus =
         data?.paymentMethod === "PayFast" ? "pending" : "confirmed";
       const orderData = {
         ...data,
-        status: orderStatus,
+        status: paymentStatus,
+        orderStatus: "Pending",
         orderTime: new Date(),
       };
       console.log(orderData);
