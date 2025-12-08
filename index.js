@@ -60,6 +60,30 @@ async function run() {
       res.send(result);
     });
 
+    // get user role
+    app.get("/users/:email/role", async (req, res) => {
+      try {
+        const email = req.params.email;
+
+        if (!email) {
+          return res.status(400).json({ message: "Email is required" });
+        }
+
+        // Find user by email
+        const user = await usersCollection.findOne({ email: email });
+
+        if (!user) {
+          return res.json({ role: "guest" });
+        }
+
+        // If user exists, return role
+        res.json({ role: user.role || "user" });
+      } catch (error) {
+        console.error("Error fetching role:", error);
+        res.status(500).json({ message: "Internal server error" });
+      }
+    });
+
     // POST new user
     app.post("/users", async (req, res) => {
       const user = req.body;
@@ -306,19 +330,67 @@ async function run() {
     });
 
     // orders approve
+    // app.patch("/orders/approve/:id", async (req, res) => {
+    //   const id = req.params.id;
+
+    //   const filter = { _id: new ObjectId(id) };
+
+    //   const update = {
+    //     $set: {
+    //       orderStatus: "Approved",
+    //       approvedAt: new Date(),
+    //     },
+    //   };
+
+    //   const result = await ordersCollection.updateOne(filter, update);
+    //   res.send(result);
+    // });
+
+    // get pending order and decrease the availableQuantity after approve
     app.patch("/orders/approve/:id", async (req, res) => {
       const id = req.params.id;
-      const filter = { _id: new ObjectId(id) };
 
-      const update = {
-        $set: {
-          orderStatus: "Approved",
-          approvedAt: new Date(),
-        },
-      };
+      try {
+        // 1. Find the order
+        const order = await ordersCollection.findOne({ _id: new ObjectId(id) });
 
-      const result = await ordersCollection.updateOne(filter, update);
-      res.send(result);
+        if (!order) {
+          return res.status(404).send({ message: "Order not found" });
+        }
+
+        // 2. Find product
+        const product = await allProductsCollection.findOne({
+          _id: new ObjectId(order.productId),
+        });
+
+        if (!product) {
+          return res.status(404).send({ message: "Product not found" });
+        }
+
+        // 3. Calculate new qty
+        const updatedQty = product.availableQuantity - order.quantity;
+
+        if (updatedQty < 0) {
+          return res.status(400).send({ message: "Not enough stock!" });
+        }
+
+        // 4. Update product quantity
+        await allProductsCollection.updateOne(
+          { _id: new ObjectId(order.productId) },
+          { $set: { availableQuantity: updatedQty } }
+        );
+
+        // 5. Update order status
+        await ordersCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { orderStatus: "Approved", approvedAt: new Date() } }
+        );
+
+        res.send({ message: "Order approved & quantity updated" });
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: "Something went wrong" });
+      }
     });
 
     // orders rejected
