@@ -373,6 +373,14 @@ async function run() {
       res.send(order?.tracking || []);
     });
 
+    // get orders for buyer to track their product
+    app.get("/orders/:id", async (req, res) => {
+      const orderId = req.params.id;
+      const filter = { _id: new ObjectId(orderId) };
+      const result = await ordersCollection.findOne(filter);
+      res.send(result);
+    });
+
     // -----------------------
     // Payment RELATED APIS
     // -----------------------
