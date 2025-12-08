@@ -296,6 +296,87 @@ async function run() {
       res.send(result);
     });
 
+    // pending order related apis
+    // get pending order
+    app.get("/orders/pending", async (req, res) => {
+      const orderStatus = req.query.orderStatus;
+      const query = { orderStatus: orderStatus };
+      const result = await ordersCollection.find(query).toArray();
+      res.send(result);
+    });
+
+    // orders approve
+    app.patch("/orders/approve/:id", async (req, res) => {
+      const id = req.params.id;
+      const filter = { _id: new ObjectId(id) };
+
+      const update = {
+        $set: {
+          orderStatus: "Approved",
+          approvedAt: new Date(),
+        },
+      };
+
+      const result = await ordersCollection.updateOne(filter, update);
+      res.send(result);
+    });
+
+    // orders rejected
+    app.patch("/orders/reject/:id", async (req, res) => {
+      const id = req.params.id;
+      const filter = { _id: new ObjectId(id) };
+
+      const update = {
+        $set: {
+          orderStatus: "Rejected",
+          rejectedAt: new Date(),
+        },
+      };
+
+      const result = await ordersCollection.updateOne(filter, update);
+      res.send(result);
+    });
+
+    // approve orders related api
+    // get approve orders
+    app.get("/orders/approve", async (req, res) => {
+      const orderStatus = req.query.orderStatus;
+      const query = { orderStatus: orderStatus };
+      const result = await ordersCollection.find(query).toArray();
+      res.send(result);
+    });
+
+    // create a tracking array inside each order
+    app.post("/tracking/:orderId", async (req, res) => {
+      const id = req.params.orderId;
+      const tracking = req.body;
+
+      const filter = { _id: new ObjectId(id) };
+
+      const update = {
+        $push: {
+          tracking: tracking,
+        },
+      };
+
+      const result = await ordersCollection.updateOne(filter, update);
+      res.send(result);
+    });
+
+    // get trackings timeline for an order
+    app.get("/tracking/:orderId", async (req, res) => {
+      const id = req.params.orderId;
+      const order = await ordersCollection.findOne({
+        _id: new ObjectId(id),
+      });
+
+      res.send(order?.tracking || []);
+    });
+
+    // -----------------------
+    // Payment RELATED APIS
+    // -----------------------
+
     // crete payment session
     app.post("/create-payment-session", async (req, res) => {
       const { orderId } = req.body;
@@ -393,7 +474,7 @@ async function run() {
 run().catch(console.dir);
 
 app.get("/", (req, res) => {
-  res.send("Hello World!");
+  res.send("garments order tracker system");
 });
 
 app.listen(port, () => {
