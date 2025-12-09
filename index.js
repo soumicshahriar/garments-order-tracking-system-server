@@ -84,6 +84,30 @@ async function run() {
       }
     });
 
+    // get user by status suspend
+    app.get("/users/:email/suspend", async (req, res) => {
+      try {
+        const email = req.params.email;
+
+        if (!email) {
+          return res.status(400).json({ message: "Email is required" });
+        }
+
+        // Find user by email
+        const user = await usersCollection.findOne({ email: email });
+
+        if (!user) {
+          return res.json({ role: "guest" });
+        }
+
+        // If user exists, return role
+        res.json({ status: user.status || "user" });
+      } catch (error) {
+        console.error("Error fetching status:", error);
+        res.status(500).json({ message: "Internal server error" });
+      }
+    });
+
     // POST new user
     app.post("/users", async (req, res) => {
       const user = req.body;
@@ -122,19 +146,56 @@ async function run() {
     });
 
     // UPDATE USER STATUS (approve / suspend / pending)
+    // app.patch("/users/update-status/:id", async (req, res) => {
+    //   const id = req.params.id;
+    //   const { status } = req.body;
+
+    //   if (!status) {
+    //     return res.status(400).send({ message: "Status is required" });
+    //   }
+
+    //   const filter = { _id: new ObjectId(id) };
+    //   const updateDoc = { $set: { status } };
+
+    //   const result = await usersCollection.updateOne(filter, updateDoc);
+    //   res.send(result);
+    // });
     app.patch("/users/update-status/:id", async (req, res) => {
       const id = req.params.id;
-      const { status } = req.body;
+      const { status, reason, feedback } = req.body;
 
       if (!status) {
         return res.status(400).send({ message: "Status is required" });
       }
 
-      const filter = { _id: new ObjectId(id) };
-      const updateDoc = { $set: { status } };
+      try {
+        const filter = { _id: new ObjectId(id) };
 
-      const result = await usersCollection.updateOne(filter, updateDoc);
-      res.send(result);
+        const updateDoc = {
+          $set: {
+            status,
+            // Only save reason & feedback if suspended
+            ...(status === "suspended" && {
+              suspendReason: reason || "Not provided",
+              suspendFeedback: feedback || "",
+              suspendedAt: new Date(),
+            }),
+          },
+          // If status is approved, remove previous suspension details
+          ...(status === "approved" && {
+            $unset: {
+              suspendReason: "",
+              suspendFeedback: "",
+              suspendedAt: "",
+            },
+          }),
+        };
+
+        const result = await usersCollection.updateOne(filter, updateDoc);
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ message: "Failed to update status", error });
+      }
     });
 
     // DELETE USER
@@ -328,23 +389,6 @@ async function run() {
       const result = await ordersCollection.find(query).toArray();
       res.send(result);
     });
-
-    // orders approve
-    // app.patch("/orders/approve/:id", async (req, res) => {
-    //   const id = req.params.id;
-
-    //   const filter = { _id: new ObjectId(id) };
-
-    //   const update = {
-    //     $set: {
-    //       orderStatus: "Approved",
-    //       approvedAt: new Date(),
-    //     },
-    //   };
-
-    //   const result = await ordersCollection.updateOne(filter, update);
-    //   res.send(result);
-    // });
 
     // get pending order and decrease the availableQuantity after approve
     app.patch("/orders/approve/:id", async (req, res) => {
