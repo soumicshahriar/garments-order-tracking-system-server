@@ -355,7 +355,7 @@ async function run() {
       const data = req.body;
       console.log(data.paymentMethod);
       const paymentStatus =
-        data?.paymentMethod === "PayFast" ? "pending" : "confirmed";
+        data?.paymentMethod === "PayFirst" ? "pending" : "confirmed";
       const orderData = {
         ...data,
         status: paymentStatus,
@@ -368,7 +368,7 @@ async function run() {
       res.send({
         success: true,
         orderId: result.insertedId,
-        paymentRequired: data?.paymentMethod === "PayFast",
+        paymentRequired: data?.paymentMethod === "PayFirst",
       });
     });
 
@@ -583,6 +583,64 @@ async function run() {
         // res.send({ success: true, result });
       }
       res.send({ success: false });
+    });
+
+    // admin dashboard analytics api
+    app.get("/admin/analytics", async (req, res) => {
+      try {
+        const filter = req.query.filter || "today";
+
+        const now = new Date();
+        let startDate;
+
+        if (filter === "today") {
+          startDate = new Date(now.setHours(0, 0, 0, 0));
+        } else if (filter === "7days") {
+          startDate = new Date(now - 7 * 24 * 60 * 60 * 1000);
+        } else if (filter === "30days") {
+          startDate = new Date(now - 30 * 24 * 60 * 60 * 1000);
+        }
+
+        // Users
+        const totalUsers = await usersCollection.countDocuments();
+        const newUsers = await usersCollection.countDocuments({
+          createdAt: { $gte: startDate },
+        });
+
+        const activeManagers = await usersCollection.countDocuments({
+          role: "manager",
+          status: "approved",
+        });
+
+        // Products
+        const totalProducts = await allProductsCollection.countDocuments();
+        const productsAdded = await allProductsCollection.countDocuments({
+          createdAt: { $gte: startDate },
+        });
+
+        // Orders
+        const orders = await ordersCollection
+          .find({ orderTime: { $gte: startDate } })
+          .toArray();
+
+        const ordersThisMonth = await ordersCollection.countDocuments({
+          orderTime: { $gte: startDate },
+        });
+
+        res.send({
+          users: { totalUsers, newUsers },
+          managers: { activeManagers },
+          products: { totalProducts, productsAdded },
+          orders: { ordersThisMonth },
+          chartData: orders.map((o) => ({
+            name: o.productTitle,
+            sales: o.quantity,
+            price: o.totalPrice,
+          })),
+        });
+      } catch (error) {
+        res.status(500).json({ error: "Analytics Error", details: error });
+      }
     });
 
     // Send a ping to confirm a successful connection
