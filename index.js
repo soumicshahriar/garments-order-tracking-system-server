@@ -3,8 +3,18 @@ const cors = require("cors");
 const app = express();
 require("dotenv").config();
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const admin = require("firebase-admin");
 const stripe = require("stripe")(process.env.STRIPE_SECRET);
 const port = process.env.PORT || 3000;
+
+const decoded = Buffer.from(process.env.FB_SERVICE_KEY, "base64").toString(
+  "utf8"
+);
+const serviceAccount = JSON.parse(decoded);
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
 
 // generate tracking id
 function generateTrackingId() {
@@ -17,6 +27,25 @@ function generateTrackingId() {
 // middle ware
 app.use(cors());
 app.use(express.json());
+
+// verify firebase token
+const verifyFirebaseToken = async (req, res, next) => {
+  // console.log(req.headers.authorization.split(" ")[1]);
+  const token = req.headers.authorization;
+  if (!token) {
+    return res.status(401).send({ message: "unauthorized access" });
+  }
+
+  try {
+    const idToken = token.split(" ")[1];
+    const decoded = await admin.auth().verifyIdToken(idToken);
+    // console.log(decoded);
+    req.decoded_email = decoded.email;
+    next();
+  } catch (error) {
+    return res.status(401).send({ message: "Unauthorized Access" });
+  }
+};
 
 // mongodb connection
 
@@ -33,7 +62,7 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
-    await client.connect();
+    // await client.connect();
 
     // database and collections
     const myDB = client.db("garments");
@@ -41,6 +70,19 @@ async function run() {
     const allProductsCollection = myDB.collection("all-products");
     const ordersCollection = myDB.collection("orders");
     const paymentsCollection = myDB.collection("payments");
+
+    // middleware with database access verify admin and must be use after verifyFirebaseToken middleware
+    const verifyAdmin = async (req, res, next) => {
+      const email = req.decoded_email;
+      const query = { email };
+      const user = await usersCollection.findOne(query);
+
+      if (!user || user.role !== "admin") {
+        return res.status(403).send({ message: "Forbidden Access" });
+      }
+
+      next();
+    };
 
     //
 
@@ -50,18 +92,23 @@ async function run() {
     // -----------------------
 
     // GET all users
-    app.get("/users", async (req, res) => {
+    app.get("/users", verifyFirebaseToken, async (req, res) => {
       const email = req.query.email;
       let query = {};
       if (email) {
         query.email = email;
+
+        // verify email
+        if (email !== req.decoded_email) {
+          return res.status(403).send({ message: "Forbidden Access" });
+        }
       }
       const result = await usersCollection.find(query).toArray();
       res.send(result);
     });
 
     // get user role
-    app.get("/users/:email/role", async (req, res) => {
+    app.get("/users/:email/role", verifyFirebaseToken, async (req, res) => {
       try {
         const email = req.params.email;
 
@@ -85,7 +132,7 @@ async function run() {
     });
 
     // get user by status suspend
-    app.get("/users/:email/suspend", async (req, res) => {
+    app.get("/users/:email/suspend", verifyFirebaseToken, async (req, res) => {
       try {
         const email = req.params.email;
 
@@ -117,6 +164,7 @@ async function run() {
       if (existingUser) {
         return res.send({ message: "User already exists", insertedId: null });
       }
+      user.createdAt = new Date();
 
       const result = await usersCollection.insertOne(user);
       res.send(result);
@@ -130,20 +178,25 @@ async function run() {
     });
 
     // UPDATE user role
-    app.patch("/users/update-role/:id", async (req, res) => {
-      const id = req.params.id;
-      const { role } = req.body;
+    app.patch(
+      "/users/update-role/:id",
+      verifyFirebaseToken,
+      verifyAdmin,
+      async (req, res) => {
+        const id = req.params.id;
+        const { role } = req.body;
 
-      if (!role) {
-        return res.status(400).send({ message: "Role is Required" });
+        if (!role) {
+          return res.status(400).send({ message: "Role is Required" });
+        }
+
+        const filter = { _id: new ObjectId(id) };
+        const updatedDoc = { $set: { role } };
+
+        const result = await usersCollection.updateOne(filter, updatedDoc);
+        res.send(result);
       }
-
-      const filter = { _id: new ObjectId(id) };
-      const updatedDoc = { $set: { role } };
-
-      const result = await usersCollection.updateOne(filter, updatedDoc);
-      res.send(result);
-    });
+    );
 
     // UPDATE USER STATUS (approve / suspend / pending)
     // app.patch("/users/update-status/:id", async (req, res) => {
@@ -260,7 +313,7 @@ async function run() {
     });
 
     // get products by email
-    app.get("/products", async (req, res) => {
+    app.get("/products", verifyFirebaseToken, async (req, res) => {
       const email = req.query.email;
       const query = { "managerInfo.managerEmail": email };
       const result = await allProductsCollection.find(query).toArray();
@@ -271,6 +324,7 @@ async function run() {
     app.post("/products", async (req, res) => {
       const productData = req.body;
       productData.status = "active";
+      productData.createdAt = new Date();
       const result = await allProductsCollection.insertOne(productData);
       res.send(result);
     });
@@ -337,7 +391,7 @@ async function run() {
     // -----------------------
 
     // get orders
-    app.get("/orders", async (req, res) => {
+    app.get("/orders", verifyFirebaseToken, async (req, res) => {
       const email = req.query.email;
       let query = {};
       if (email) {
@@ -644,10 +698,10 @@ async function run() {
     });
 
     // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!"
-    );
+    // await client.db("admin").command({ ping: 1 });
+    // console.log(
+    //   "Pinged your deployment. You successfully connected to MongoDB!"
+    // );
   } finally {
     // Ensures that the client will close when you finish/error
     // await client.close();
