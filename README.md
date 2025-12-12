@@ -2,8 +2,6 @@
 
 A secure, scalable backend built with **Node.js**, **Express.js**, and **MongoDB** with JWT authentication, role-based permission handling, and advanced production tracking features.
 
-## 🌐 Live Server URL  
-🔗 **Server URL:** https://garments-order-tracker-system-serve.vercel.app/
 
 ---
 
