@@ -543,7 +543,7 @@ async function run() {
       res.send(order?.tracking || []);
     });
 
-    // get orders for buyer to track their product
+    // get orders for buyer to track their products
     app.get("/orders/:id", async (req, res) => {
       const orderId = req.params.id;
       const filter = { _id: new ObjectId(orderId) };
