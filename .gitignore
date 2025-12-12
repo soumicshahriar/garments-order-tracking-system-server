@@ -1,3 +1,4 @@
 node_modules
 .env
 garments-order-tracking-system-firebase-adminsdk.json
+.vercel
